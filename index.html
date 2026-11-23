@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guild Hall</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" id="brand">Guild Hall</div>
+    <nav id="nav" hidden>
+      <button data-view="guides">Guides</button>
+      <button data-view="videos">Videos</button>
+      <button data-view="public">Public chat</button>
+      <button data-view="private">Private messages</button>
+      <button data-view="owner" id="nav-owner" hidden>Owner tools</button>
+    </nav>
+    <div class="who" id="who" hidden>
+      <span id="who-name"></span>
+      <button id="logout" class="link">Log out</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="notice" class="notice" hidden></div>
+
+    <!-- Sign in / sign up -->
+    <section id="view-auth" class="view card narrow" hidden>
+      <div class="tabs">
+        <button id="tab-login" class="active">Log in</button>
+        <button id="tab-signup">Join with a code</button>
+      </div>
+
+      <form id="form-login">
+        <label>Name <input name="username" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" class="primary">Log in</button>
+      </form>
+
+      <form id="form-signup" hidden>
+        <label>Activation code <input name="code" required placeholder="GUILD-XXXXXXXX"></label>
+        <label>Choose a name <input name="username" autocomplete="username" required pattern="[A-Za-z0-9_]{3,20}" title="3 to 20 letters, numbers or _"></label>
+        <label>Choose a password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Repeat password <input name="password2" type="password" autocomplete="new-password" required minlength="8"></label>
+        <button type="submit" class="primary">Create account</button>
+      </form>
+    </section>
+
+    <!-- Guides -->
+    <section id="view-guides" class="view" hidden>
+      <h1>Guides</h1>
+      <form id="form-guide" class="card owner-only" hidden>
+        <h2 id="guide-form-title">Write a guide</h2>
+        <input type="hidden" name="id">
+        <label>Title <input name="title" required maxlength="200"></label>
+        <label>Text <textarea name="body" rows="8" required></textarea></label>
+        <div class="row">
+          <button type="submit" class="primary">Save guide</button>
+          <button type="button" id="guide-cancel" class="link" hidden>Cancel edit</button>
+        </div>
+      </form>
+      <div id="guides-list"></div>
+    </section>
+
+    <!-- Videos -->
+    <section id="view-videos" class="view" hidden>
+      <h1>Videos</h1>
+      <form id="form-video" class="card owner-only" hidden>
+        <h2>Post a YouTube video</h2>
+        <label>Title <input name="title" required maxlength="200"></label>
+        <label>YouTube link <input name="url" required placeholder="https://www.youtube.com/watch?v=..."></label>
+        <button type="submit" class="primary">Post video</button>
+      </form>
+      <div id="videos-list" class="video-grid"></div>
+    </section>
+
+    <!-- Public chat -->
+    <section id="view-public" class="view" hidden>
+      <h1>Public chat</h1>
+      <p class="hint">Everyone in the guild can read this. Ask questions here.</p>
+      <div class="chat card">
+        <div id="public-log" class="log"></div>
+        <form id="form-public" class="composer">
+          <textarea name="body" rows="2" required maxlength="4000" placeholder="Write a message..."></textarea>
+          <button type="submit" class="primary">Send</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Private messages -->
+    <section id="view-private" class="view" hidden>
+      <h1>Private messages</h1>
+      <p class="hint" id="private-hint">Only you and the guild owner can read these.</p>
+      <div class="private-layout">
+        <aside id="member-list" class="card owner-only" hidden></aside>
+        <div class="chat card">
+          <div id="private-title" class="chat-title"></div>
+          <div id="private-log" class="log"></div>
+          <form id="form-private" class="composer">
+            <textarea name="body" rows="2" required maxlength="4000" placeholder="Write a private message..."></textarea>
+            <button type="submit" class="primary">Send</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Owner tools -->
+    <section id="view-owner" class="view" hidden>
+      <h1>Owner tools</h1>
+      <div class="card">
+        <h2>Activation codes</h2>
+        <p class="hint">Make a code and give it to one player. Each code works once.</p>
+        <button id="new-code" class="primary">Make a new code</button>
+        <table class="codes">
+          <thead><tr><th>Code</th><th>Status</th><th></th></tr></thead>
+          <tbody id="codes-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
