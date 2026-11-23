@@ -22,6 +22,7 @@ const el = (tag, props = {}, ...kids) => {
     if (k === "class") n.className = v;
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else if (k === "text") n.textContent = v;
+    else if (k === "html") n.innerHTML = v; // only ever called with DOMPurify-sanitized output
     else n.setAttribute(k, v);
   }
   for (const kid of kids) if (kid != null) n.append(kid);
@@ -171,6 +172,20 @@ document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => showVi
 
 // ---------- guides ----------
 
+// Guides are written in Markdown and shown as HTML. Everything passes through DOMPurify,
+// so no script, event handler or odd URL from a guide can run in a member's browser.
+marked.setOptions({ breaks: true, gfm: true });
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer nofollow"); }
+  if (node.tagName === "IMG") { node.setAttribute("loading", "lazy"); node.setAttribute("referrerpolicy", "no-referrer"); }
+});
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(text ?? ""), {
+    FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "iframe"],
+    FORBID_ATTR: ["style"],
+  });
+}
+
 async function loadGuides() {
   const list = $("#guides-list");
   const { data, error } = await sb.from("guides").select("*").order("created_at", { ascending: false });
@@ -189,7 +204,7 @@ async function loadGuides() {
     list.append(el("article", { class: "card guide" },
       el("h2", { text: g.title }),
       el("div", { class: "meta", text: "Updated " + fmtTime(g.updated_at) }),
-      el("div", { class: "body", text: g.body }),
+      el("div", { class: "body md", html: renderMarkdown(g.body) }),
       actions,
       el("section", { class: "discussion", "data-guide": g.id })));
     renderDiscussion(g.id);
@@ -290,18 +305,36 @@ function removeComment(id, guideId) {
 
 function editGuide(g) {
   const f = $("#form-guide");
-  f.id.value = g.id; f.title.value = g.title; f.body.value = g.body;
+  f.id.value = g.id; f.title.value = g.title; f.body.value = g.body; updatePreview();
   $("#guide-form-title").textContent = "Edit guide";
   $("#guide-cancel").hidden = false;
   f.scrollIntoView({ behavior: "smooth" });
 }
 function resetGuideForm() {
   const f = $("#form-guide");
-  f.reset(); f.id.value = "";
+  f.reset(); f.id.value = ""; updatePreview();
   $("#guide-form-title").textContent = "Write a guide";
   $("#guide-cancel").hidden = true;
 }
 $("#guide-cancel").onclick = resetGuideForm;
+
+// live preview and .md file import in the guide editor
+function updatePreview() {
+  const v = $("#guide-body").value;
+  $("#guide-preview-wrap").hidden = !v.trim();
+  $("#guide-preview").innerHTML = renderMarkdown(v);
+}
+$("#guide-body").addEventListener("input", updatePreview);
+$("#guide-file").onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 200000) { e.target.value = ""; return notify("That file is too large. Guides can be up to 200 KB."); }
+  const f = $("#form-guide");
+  f.body.value = await file.text();
+  if (!f.title.value.trim()) f.title.value = file.name.replace(/\.(md|markdown|txt)$/i, "").replace(/[-_]+/g, " ");
+  e.target.value = "";
+  updatePreview();
+};
 
 $("#form-guide").onsubmit = (e) => {
   e.preventDefault();

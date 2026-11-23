@@ -129,9 +129,9 @@ button.danger { color: var(--alert); }
 .notice.ok { background: rgba(79, 224, 168, .12); border-color: var(--ok); }
 
 /* ---- guides ---- */
-.guide h2 { margin-bottom: 4px; color: var(--text); font-size: 1.5rem; }
+.guide > h2 { margin-bottom: 4px; color: var(--text); font-size: 1.5rem; }
 .guide .meta { color: var(--amber); font: 600 .85rem var(--display); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
-.guide .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.guide > h2 { margin-bottom: 4px; }
 
 /* ---- guide discussion ---- */
 .discussion { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--edge-dim); }
@@ -159,6 +159,35 @@ button.danger { color: var(--alert); }
 .comment-form { padding: 10px 0 0; border: 0; background: none; }
 .comment .comment-form { margin-top: 8px; }
 .comment-form textarea { min-height: 3.2em; }
+
+/* ---- rendered Markdown (guides and the editor preview) ---- */
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4 { font-family: var(--display); text-transform: uppercase; letter-spacing: .06em; line-height: 1.15; margin: 1.4em 0 .5em; color: var(--text); }
+.md h1 { font-size: 1.5rem; } .md h1::after { display: none; }
+.md h2 { font-size: 1.3rem; color: var(--edge); }
+.md h3 { font-size: 1.1rem; color: var(--amber); }
+.md h4 { font-size: 1rem; color: var(--muted); }
+.md p, .md ul, .md ol, .md blockquote, .md pre, .md table { margin: 0 0 1em; }
+.md ul, .md ol { padding-left: 1.4em; }
+.md li::marker { color: var(--edge); }
+.md a { color: var(--edge); text-decoration: underline; text-underline-offset: 3px; }
+.md a:hover { text-shadow: 0 0 10px var(--edge); }
+.md blockquote { padding: 6px 14px; border-left: 3px solid var(--amber); background: rgba(242, 180, 65, .07); color: var(--text); }
+.md code { font: .92em ui-monospace, "JetBrains Mono", Consolas, monospace; padding: 1px 5px; background: rgba(3, 10, 15, .7); color: var(--amber); }
+.md pre { padding: 12px 14px; overflow-x: auto; background: rgba(3, 10, 15, .7); box-shadow: inset 0 0 0 1px var(--edge-dim); }
+.md pre code { padding: 0; background: none; color: var(--text); }
+.md img { max-width: 100%; height: auto; box-shadow: 0 0 0 1px var(--edge-dim); }
+.md hr { border: 0; height: 1px; margin: 1.4em 0; background: linear-gradient(90deg, var(--edge), transparent); }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.md th, .md td { padding: 6px 12px; border: 1px solid var(--edge-dim); text-align: left; }
+.md th { font: 700 .85rem var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--edge); background: rgba(95, 216, 255, .07); }
+.md-help code { color: var(--amber); }
+.file-pick { display: inline-block; margin: 0 0 0 8px; color: var(--edge); cursor: pointer; text-decoration: underline; }
+.file-pick input { display: none; }
+.guide-preview-wrap { margin: 4px 0 16px; padding: 12px 16px; background: rgba(3, 10, 15, .45); box-shadow: inset 0 0 0 1px var(--edge-dim); }
+.guide-preview-wrap h2 { font-size: .9rem; color: var(--muted); }
 
 /* ---- videos ---- */
 .video-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
