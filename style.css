@@ -222,6 +222,10 @@ button.danger { color: var(--alert); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
+.members .member-name { color: var(--name-blue); font: 700 1.05rem var(--display); letter-spacing: .05em; }
+.members .badge { color: var(--amber); font: 700 .8rem var(--display); letter-spacing: .12em; text-transform: uppercase; }
+@media (max-width: 640px) { .members th:nth-child(3), .members td:nth-child(3) { display: none; } }
+
 /* ---- "new version" notice (only shown if someone is mid-draft) ---- */
 .update-banner {
   position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 20;

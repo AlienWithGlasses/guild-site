@@ -8,7 +8,7 @@
     // Force-reload when a newer version has been deployed (GitHub Pages caches files for 10 minutes).
     // deploy.sh stamps BUILD, the ?v= on the files below, and version.json with the same number.
     (function () {
-      var BUILD = "20261123060547";
+      var BUILD = "20261123060916";
       var banner;
       function typing() {
         return [].some.call(document.querySelectorAll("textarea, input"), function (n) { return n.value && n.type !== "hidden" && n.type !== "submit"; });
@@ -51,10 +51,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css?v=20261123060547">
-  <script src="config.js?v=20261123060547"></script>
+  <link rel="stylesheet" href="style.css?v=20261123060916">
+  <script src="config.js?v=20261123060916"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=20261123060547" defer></script>
+  <script src="app.js?v=20261123060916" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -64,6 +64,7 @@
       <button data-view="videos">Videos</button>
       <button data-view="public">Public chat</button>
       <button data-view="private">Private messages</button>
+      <button data-view="members" id="nav-members" hidden>Members</button>
       <button data-view="owner" id="nav-owner" hidden>Owner tools</button>
     </nav>
     <div class="who" id="who" hidden>
@@ -156,6 +157,18 @@
     </section>
 
     <!-- Owner tools -->
+    <section id="view-members" class="view" hidden>
+      <h1>Members</h1>
+      <div class="card">
+        <p class="hint">Everyone who has joined. Removing a member deletes their login, messages and comments. Your owner account can't be removed or reset here.</p>
+        <table class="codes members">
+          <thead><tr><th>Name</th><th>Joined</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="members-body"></tbody>
+        </table>
+        <p id="members-empty" class="empty" hidden>No other members yet. Make a code under Owner tools.</p>
+      </div>
+    </section>
+
     <section id="view-owner" class="view" hidden>
       <h1>Owner tools</h1>
       <div class="card">

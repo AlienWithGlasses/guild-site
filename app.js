@@ -137,7 +137,7 @@ async function onSession(session) {
 
   $("#who-name").textContent = state.me.username + (state.me.is_owner ? " (owner)" : "");
   $("#nav").hidden = $("#who").hidden = false;
-  $("#nav-owner").hidden = !state.me.is_owner;
+  $("#nav-owner").hidden = $("#nav-members").hidden = !state.me.is_owner;
   document.querySelectorAll(".owner-only").forEach((n) => (n.hidden = !state.me.is_owner));
   $(".private-layout").classList.toggle("with-list", state.me.is_owner);
   $("#private-hint").textContent = state.me.is_owner
@@ -157,15 +157,15 @@ async function loadProfiles() {
 
 // ---------- navigation ----------
 
-const VIEWS = ["auth", "guides", "videos", "public", "private", "owner"];
+const VIEWS = ["auth", "guides", "videos", "public", "private", "members", "owner"];
 function showView(name) {
   if (!state.me && name !== "auth") name = "auth";
-  if (name === "owner" && !state.me?.is_owner) name = "guides";
+  if ((name === "owner" || name === "members") && !state.me?.is_owner) name = "guides";
   if (!VIEWS.includes(name)) name = "guides";
   for (const v of VIEWS) $("#view-" + v).hidden = v !== name;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   if (name !== "auth") history.replaceState(null, "", "#" + name);
-  ({ guides: loadGuides, videos: loadVideos, public: loadPublic, private: openPrivate, owner: loadCodes }[name] || (() => {}))();
+  ({ guides: loadGuides, videos: loadVideos, public: loadPublic, private: openPrivate, members: loadMembers, owner: loadCodes }[name] || (() => {}))();
 }
 document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
 
@@ -484,6 +484,47 @@ function subscribeMessages() {
     })
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "guide_comments" }, ({ old }) => removeComment(old.id))
     .subscribe();
+}
+
+// ---------- owner: members ----------
+
+async function loadMembers() {
+  const { data, error } = await sb.rpc("list_members");
+  if (error) return notify(error.message);
+  const body = $("#members-body");
+  body.replaceChildren();
+  const others = data.filter((m) => m.id !== state.me.id);
+  $("#members-empty").hidden = others.length > 0;
+  for (const m of data) {
+    const isMe = m.id === state.me.id;
+    const actions = (m.is_owner || isMe) ? el("span", { class: "badge", text: isMe ? "You (owner)" : "Owner" })
+      : el("div", { class: "row" },
+          el("button", { class: "link", text: "New password", onclick: () => resetMemberPassword(m) }),
+          el("button", { class: "link danger", text: "Remove", onclick: () => removeMember(m) }));
+    body.append(el("tr", {},
+      el("td", {}, el("b", { class: "member-name", text: m.username })),
+      el("td", { text: fmtTime(m.created_at) }),
+      el("td", { text: m.last_sign_in_at ? fmtTime(m.last_sign_in_at) : "Never" }),
+      el("td", {}, actions)));
+  }
+}
+
+async function removeMember(m) {
+  if (!confirm(`Remove ${m.username}? Their login, messages and comments will be deleted. This cannot be undone.`)) return;
+  const { error } = await sb.rpc("remove_member", { p_id: m.id });
+  if (error) return notify(error.message);
+  notify(`${m.username} was removed.`, true);
+  await loadProfiles();
+  loadMembers();
+}
+
+async function resetMemberPassword(m) {
+  const pw = prompt(`New password for ${m.username} (at least 8 characters). They will be signed out everywhere and must log in with this one.`);
+  if (pw === null) return;
+  if (pw.length < 8) return notify("The password must have at least 8 characters.");
+  const { error } = await sb.rpc("set_member_password", { p_id: m.id, p_password: pw });
+  if (error) return notify(error.message);
+  notify(`New password set for ${m.username}. Tell them in person; it is not stored anywhere.`, true);
 }
 
 // ---------- owner: activation codes ----------
