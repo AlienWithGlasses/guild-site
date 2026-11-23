@@ -221,3 +221,12 @@ button.danger { color: var(--alert); }
   .composer { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- "new version" notice (only shown if someone is mid-draft) ---- */
+.update-banner {
+  position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 20;
+  display: flex; gap: 12px; align-items: center; padding: 10px 16px;
+  background: var(--hull-2); box-shadow: inset 0 0 0 1px var(--amber), 0 0 24px rgba(242, 180, 65, .25);
+  font: 600 1rem var(--display); letter-spacing: .06em; text-transform: uppercase;
+}
+.update-banner button { background: var(--amber); color: #1a1203; border: 0; padding: 6px 12px; font: 700 .95rem var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }

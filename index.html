@@ -4,14 +4,57 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Guild Hall</title>
+  <script>
+    // Force-reload when a newer version has been deployed (GitHub Pages caches files for 10 minutes).
+    // deploy.sh stamps BUILD, the ?v= on the files below, and version.json with the same number.
+    (function () {
+      var BUILD = "20261123060453";
+      var banner;
+      function typing() {
+        return [].some.call(document.querySelectorAll("textarea, input"), function (n) { return n.value && n.type !== "hidden" && n.type !== "submit"; });
+      }
+      function refresh() {
+        try { sessionStorage.setItem("reloaded-for", BUILD); } catch (e) {}
+        // re-fetch the page itself uncached so the browser drops its stale copy, then reload
+        fetch(location.pathname, { cache: "reload" }).catch(function () {}).then(function () { location.reload(); });
+      }
+      function check() {
+        fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j || !j.v || j.v === BUILD) return;
+            var tried; try { tried = sessionStorage.getItem("reloaded-for"); } catch (e) {}
+            if (tried === j.v) return; // already tried once this session: do not loop
+            if (typing()) {
+              if (banner) return;
+              banner = document.createElement("div");
+              banner.className = "update-banner";
+              banner.textContent = "A new version is ready. ";
+              var b = document.createElement("button");
+              b.textContent = "Reload now";
+              b.onclick = function () { try { sessionStorage.setItem("reloaded-for", j.v); } catch (e) {} refresh(); };
+              banner.appendChild(b);
+              document.body.appendChild(banner);
+            } else {
+              try { sessionStorage.setItem("reloaded-for", j.v); } catch (e) {}
+              refresh();
+            }
+          })
+          .catch(function () {});
+      }
+      check();
+      document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
+      setInterval(check, 5 * 60 * 1000);
+    })();
+  </script>
   <meta name="theme-color" content="#061219">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css">
-  <script src="config.js"></script>
+  <link rel="stylesheet" href="style.css?v=20261123060453">
+  <script src="config.js?v=20261123060453"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js" defer></script>
+  <script src="app.js?v=20261123060453" defer></script>
 </head>
 <body>
   <header class="topbar">
