@@ -253,7 +253,14 @@ button.danger { color: var(--alert); }
 
 .members .member-name { color: var(--name-blue); font: 700 1.05rem var(--display); letter-spacing: .05em; }
 .members .badge { color: var(--amber); font: 700 .8rem var(--display); letter-spacing: .12em; text-transform: uppercase; }
-@media (max-width: 640px) { .members th:nth-child(3), .members td:nth-child(3) { display: none; } }
+@media (max-width: 640px) { .members th:nth-child(4), .members td:nth-child(4) { display: none; } }
+select {
+  font: 500 1rem var(--body); color: var(--text); padding: 8px 10px; margin-top: 5px; max-width: 100%;
+  background: rgba(3, 10, 15, .7); border: 1px solid var(--edge-dim); border-radius: 2px; letter-spacing: normal; text-transform: none;
+}
+select:focus { outline: 0; border-color: var(--edge); box-shadow: 0 0 0 3px rgba(95, 216, 255, .18); }
+.role-select { margin: 0; padding: 4px 8px; font-size: .95rem; }
+label.inline { margin: 0; }
 
 /* ---- "new version" notice (only shown if someone is mid-draft) ---- */
 .update-banner {

@@ -7,7 +7,7 @@ const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY)
 
 const state = {
   user: null,        // auth user
-  me: null,          // profile row {id, username, is_owner}
+  me: null,          // profile row {id, username, is_owner, is_writer}
   owner: null,       // owner's profile
   profiles: new Map(),
   privatePeer: null, // profile id of the other person in private chat
@@ -40,6 +40,10 @@ function notify(msg, ok = false) {
   notify.t = setTimeout(() => (n.hidden = true), 6000);
 }
 
+const canWrite = () => !!(state.me.is_owner || state.me.is_writer);
+// the owner edits anything; a writer only what they posted (the database enforces this too)
+const canEdit = (row) => !!(state.me.is_owner || (state.me.is_writer && row.author_id === state.me.id));
+const roleLabel = (p) => (p?.is_owner ? "Owner" : p?.is_writer ? "Writer" : null);
 const nameToEmail = (name) => `${name.trim().toLowerCase()}@${cfg.LOGIN_EMAIL_DOMAIN}`;
 const fmtTime = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
@@ -136,10 +140,11 @@ async function onSession(session) {
   state.me = state.profiles.get(state.user.id);
   if (!state.me) { notify("Your profile was not found."); return sb.auth.signOut(); }
 
-  $("#who-name").textContent = state.me.username + (state.me.is_owner ? " (owner)" : "");
+  $("#who-name").textContent = state.me.username + (state.me.is_owner ? " (owner)" : state.me.is_writer ? " (writer)" : "");
   $("#nav").hidden = $("#who").hidden = false;
   $("#nav-owner").hidden = $("#nav-members").hidden = !state.me.is_owner;
   document.querySelectorAll(".owner-only").forEach((n) => (n.hidden = !state.me.is_owner));
+  document.querySelectorAll(".writer-only").forEach((n) => (n.hidden = !canWrite()));
   $(".private-layout").classList.toggle("with-list", state.me.is_owner);
   $("#private-hint").textContent = state.me.is_owner
     ? "Pick a member on the left. Only you and that member can read the conversation."
@@ -150,7 +155,7 @@ async function onSession(session) {
 }
 
 async function loadProfiles() {
-  const { data, error } = await sb.from("profiles").select("id, username, is_owner").order("username");
+  const { data, error } = await sb.from("profiles").select("id, username, is_owner, is_writer").order("username");
   if (error) return notify("Could not load members: " + error.message);
   state.profiles = new Map(data.map((p) => [p.id, p]));
   state.owner = data.find((p) => p.is_owner) ?? null;
@@ -196,7 +201,7 @@ async function loadGuides() {
   list.replaceChildren();
   if (!data.length) list.append(el("p", { class: "empty", text: "No guides yet." }));
   for (const g of data) {
-    const actions = state.me.is_owner
+    const actions = canEdit(g)
       ? el("div", { class: "row" },
           el("button", { class: "link", text: "Edit", onclick: () => editGuide(g) }),
           el("button", { class: "link danger", text: "Delete", onclick: () => deleteRow("guides", g.id, loadGuides) }))
@@ -240,7 +245,7 @@ function renderComment(c, guideId, canReply) {
   const node = el("div", { class: "comment" + (author?.is_owner ? " owner" : ""), "data-id": c.id },
     el("div", { class: "head" },
       el("b", { text: author?.username ?? "former member" }),
-      author?.is_owner ? el("span", { class: "badge", text: "Owner" }) : null,
+      roleLabel(author) ? el("span", { class: "badge", text: roleLabel(author) }) : null,
       el("span", { text: fmtTime(c.created_at) }),
       canReply ? el("button", { class: "link", text: "Reply", onclick: (e) => toggleReply(node, guideId, c.id, e.target) }) : null,
       (mine || state.me.is_owner) ? el("button", { class: "link danger del", text: "delete", onclick: () => deleteComment(c.id, guideId) }) : null),
@@ -377,7 +382,7 @@ async function loadVideos() {
           referrerpolicy: "strict-origin-when-cross-origin",
         })),
       el("h2", { text: v.title }),
-      state.me.is_owner
+      canEdit(v)
         ? el("button", { class: "link danger", text: "Remove", onclick: () => deleteRow("videos", v.id, loadVideos) })
         : null));
   }
@@ -405,7 +410,7 @@ function renderMessage(m) {
   return el("div", { class: "msg" + (mine ? " mine" : "") + (author?.is_owner ? " owner" : ""), "data-id": m.id },
     el("div", { class: "head" },
       el("b", { text: author?.username ?? "former member" }),
-      author?.is_owner ? el("span", { class: "badge", text: "Owner" }) : null,
+      roleLabel(author) ? el("span", { class: "badge", text: roleLabel(author) }) : null,
       el("span", { text: fmtTime(m.created_at) }),
       canDelete ? el("button", { class: "link danger del", text: "delete", onclick: () => deleteMessage(m.id) }) : null),
     el("div", { class: "text", text: m.body }));
@@ -530,16 +535,34 @@ async function loadMembers() {
   $("#members-empty").hidden = others.length > 0;
   for (const m of data) {
     const isMe = m.id === state.me.id;
-    const actions = (m.is_owner || isMe) ? el("span", { class: "badge", text: isMe ? "You (owner)" : "Owner" })
+    const role = m.is_owner ? el("span", { class: "badge", text: "Owner" })
+      : (() => {
+          const sel = el("select", { class: "role-select", "aria-label": "Role for " + m.username },
+            el("option", { value: "user", text: "User" }), el("option", { value: "writer", text: "Writer" }));
+          sel.value = m.is_writer ? "writer" : "user";
+          sel.onchange = () => changeRole(m, sel);
+          return sel;
+        })();
+    const actions = (m.is_owner || isMe) ? el("span", { class: "badge", text: isMe ? "You" : "" })
       : el("div", { class: "row" },
           el("button", { class: "link", text: "New password", onclick: () => resetMemberPassword(m) }),
           el("button", { class: "link danger", text: "Remove", onclick: () => removeMember(m) }));
     body.append(el("tr", {},
       el("td", {}, el("b", { class: "member-name", text: m.username })),
+      el("td", {}, role),
       el("td", { text: fmtTime(m.created_at) }),
       el("td", { text: m.last_sign_in_at ? fmtTime(m.last_sign_in_at) : "Never" }),
       el("td", {}, actions)));
   }
+}
+
+async function changeRole(m, sel) {
+  const role = sel.value;
+  const { error } = await sb.rpc("set_member_role", { p_id: m.id, p_role: role });
+  if (error) { sel.value = m.is_writer ? "writer" : "user"; return notify(error.message); }
+  m.is_writer = role === "writer";
+  await loadProfiles();
+  notify(`${m.username} is now ${role === "writer" ? "a writer and can post guides and videos" : "a user and can no longer post"}.`, true);
 }
 
 async function removeMember(m) {
@@ -571,6 +594,7 @@ async function loadCodes() {
     const usedBy = c.used_by ? state.profiles.get(c.used_by)?.username ?? "a member" : null;
     body.append(el("tr", {},
       el("td", {}, el("code", { text: c.code })),
+      el("td", { text: c.role === "writer" ? "Writer" : "User" }),
       el("td", { text: usedBy ? `Used by ${usedBy}` : "Not used yet" }),
       el("td", {}, usedBy ? null : el("button", {
         class: "link danger", text: "Cancel code",
@@ -584,9 +608,10 @@ async function loadCodes() {
 }
 
 $("#new-code").onclick = async () => {
-  const { data, error } = await sb.rpc("create_invite_code");
+  const role = $("#new-code-role").value;
+  const { data, error } = await sb.rpc("create_invite_code", { p_role: role });
   if (error) return notify(error.message);
-  notify(`New code: ${data}. Give it to one player.`, true);
+  notify(`New ${role} code: ${data}. Give it to one player.`, true);
   loadCodes();
 };
 
