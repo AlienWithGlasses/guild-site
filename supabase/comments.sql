@@ -24,7 +24,7 @@ create policy "members write comments" on public.guide_comments
     author_id = auth.uid()
     and (parent_id is null or exists (
       select 1 from public.guide_comments p
-      where p.id = parent_id and p.guide_id = guide_comments.guide_id and p.parent_id is null))
+      where p.id = guide_comments.parent_id and p.guide_id = guide_comments.guide_id and p.parent_id is null))
   );
 
 drop policy if exists "delete comments" on public.guide_comments;

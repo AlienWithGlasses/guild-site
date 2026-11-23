@@ -13,6 +13,12 @@ const state = {
   privatePeer: null, // profile id of the other person in private chat
   channel: null,
   comments: [],      // guide_comments rows for the guides on screen
+  categories: [],    // guide_categories rows
+  guideFilter: "all", // "all" | "none" | category id
+  openGuides: new Set(),
+  threadSort: "new",
+  openThreads: new Set(),
+  myVotes: { threads: new Set(), comments: new Set() },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -23,7 +29,7 @@ const el = (tag, props = {}, ...kids) => {
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else if (k === "text") n.textContent = v;
     else if (k === "html") n.innerHTML = v; // only ever called with DOMPurify-sanitized output
-    else n.setAttribute(k, v);
+    else if (v != null) n.setAttribute(k, v);
   }
   for (const kid of kids) if (kid != null) n.append(kid);
   return n;
@@ -163,7 +169,7 @@ async function loadProfiles() {
 
 // ---------- navigation ----------
 
-const VIEWS = ["auth", "guides", "videos", "public", "private", "members", "owner"];
+const VIEWS = ["auth", "guides", "threads", "videos", "public", "private", "members", "owner"];
 function showView(name) {
   if (!state.me && name !== "auth") name = "auth";
   if ((name === "owner" || name === "members") && !state.me?.is_owner) name = "guides";
@@ -171,7 +177,7 @@ function showView(name) {
   for (const v of VIEWS) $("#view-" + v).hidden = v !== name;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   if (name !== "auth") history.replaceState(null, "", "#" + name);
-  ({ guides: loadGuides, videos: loadVideos, public: loadPublic, private: openPrivate, members: loadMembers, owner: loadCodes }[name] || (() => {}))();
+  ({ guides: loadGuides, threads: loadThreads, videos: loadVideos, public: loadPublic, private: openPrivate, members: loadMembers, owner: loadCodes }[name] || (() => {}))();
 }
 document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
 
@@ -191,29 +197,142 @@ function renderMarkdown(text) {
   });
 }
 
+async function loadCategories() {
+  const { data, error } = await sb.from("guide_categories").select("*").order("position").order("name");
+  if (error) { notify("Categories could not load: " + error.message); return; }
+  state.categories = data;
+  const sel = $("#guide-category");
+  const keep = sel.value;
+  sel.replaceChildren(el("option", { value: "", text: "No category" }),
+    ...data.map((c) => el("option", { value: String(c.id), text: c.name })));
+  sel.value = keep;
+  renderCategoryManager();
+}
+
+function renderCategoryManager() {
+  const ul = $("#categories-list");
+  ul.replaceChildren();
+  const cats = state.categories;
+  if (!cats.length) ul.append(el("li", { class: "empty", text: "No categories yet. Add the first one above." }));
+  cats.forEach((c, i) => ul.append(el("li", {},
+    el("b", { text: c.name }),
+    el("span", { class: "row" },
+      el("button", { class: "link", text: "Up", disabled: i === 0 ? "" : null, "aria-label": "Move " + c.name + " up", onclick: () => moveCategory(i, -1) }),
+      el("button", { class: "link", text: "Down", disabled: i === cats.length - 1 ? "" : null, "aria-label": "Move " + c.name + " down", onclick: () => moveCategory(i, 1) }),
+      el("button", { class: "link", text: "Rename", onclick: () => renameCategory(c) }),
+      el("button", { class: "link danger", text: "Delete", onclick: () => deleteCategory(c) })))));
+}
+
+$("#form-category").onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target;
+  withBusy(f, async () => {
+    const name = f.name.value.trim();
+    if (!name) return;
+    const position = state.categories.length ? Math.max(...state.categories.map((c) => c.position)) + 1 : 0;
+    const { error } = await sb.from("guide_categories").insert({ name, position });
+    if (error) return notify(/duplicate|unique/i.test(error.message) ? "You already have a category with that name." : error.message);
+    f.reset();
+    await loadCategories();
+    loadGuides();
+  });
+};
+
+async function renameCategory(c) {
+  const name = prompt("New name for this category:", c.name)?.trim();
+  if (!name || name === c.name) return;
+  const { error } = await sb.from("guide_categories").update({ name }).eq("id", c.id);
+  if (error) return notify(/duplicate|unique/i.test(error.message) ? "You already have a category with that name." : error.message);
+  await loadCategories();
+  loadGuides();
+}
+
+async function deleteCategory(c) {
+  if (!confirm(`Delete the category "${c.name}"? Its guides are kept and move to "No category".`)) return;
+  const { error } = await sb.from("guide_categories").delete().eq("id", c.id);
+  if (error) return notify(error.message);
+  if (state.guideFilter === c.id) state.guideFilter = "all";
+  await loadCategories();
+  loadGuides();
+}
+
+async function moveCategory(i, dir) {
+  const order = [...state.categories];
+  const j = i + dir;
+  if (j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  const results = await Promise.all(order.map((c, pos) => sb.from("guide_categories").update({ position: pos }).eq("id", c.id)));
+  const failed = results.find((r) => r.error);
+  if (failed) return notify(failed.error.message);
+  await loadCategories();
+  loadGuides();
+}
+
+function guideCard(g) {
+  const card = el("details", { class: "card guide", "data-id": g.id, id: "guide-" + g.id });
+  card.open = state.openGuides.has(g.id) || location.hash === "#guide-" + g.id;
+  card.addEventListener("toggle", () => (card.open ? state.openGuides.add(g.id) : state.openGuides.delete(g.id)));
+  const actions = canEdit(g)
+    ? el("div", { class: "row" },
+        el("button", { class: "link", text: "Edit", onclick: () => editGuide(g) }),
+        el("button", { class: "link danger", text: "Delete", onclick: () => deleteRow("guides", g.id, loadGuides) }))
+    : null;
+  card.append(
+    el("summary", {},
+      el("h2", { text: g.title }),
+      el("span", { class: "meta", text: "Updated " + fmtTime(g.updated_at) })),
+    el("div", { class: "body md", html: renderMarkdown(g.body) }),
+    actions,
+    el("section", { class: "discussion", "data-guide": g.id }));
+  return card;
+}
+
+function renderGuideFilter(counts) {
+  const bar = $("#guide-filter");
+  bar.replaceChildren();
+  const chip = (key, label, count) => el("button", {
+    type: "button", class: "chip" + (String(state.guideFilter) === String(key) ? " active" : ""),
+    text: count == null ? label : `${label} (${count})`,
+    onclick: () => { state.guideFilter = key; loadGuides(); },
+  });
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  bar.hidden = state.categories.length === 0;
+  bar.append(chip("all", "All", total));
+  for (const c of state.categories) bar.append(chip(c.id, c.name, counts.get(c.id) ?? 0));
+  if (counts.get("none")) bar.append(chip("none", "No category", counts.get("none")));
+}
+
 async function loadGuides() {
   const list = $("#guides-list");
+  await loadCategories();
   const { data, error } = await sb.from("guides").select("*").order("created_at", { ascending: false });
   if (error) return notify(error.message);
   const { data: comments, error: cErr } = await sb.from("guide_comments").select("*").order("created_at");
   if (cErr) notify("Comments could not load: " + cErr.message);
   state.comments = comments ?? [];
+
+  const known = new Set(state.categories.map((c) => c.id));
+  const keyOf = (g) => (g.category_id != null && known.has(g.category_id) ? g.category_id : "none");
+  const counts = new Map();
+  for (const g of data) counts.set(keyOf(g), (counts.get(keyOf(g)) ?? 0) + 1);
+  if (state.guideFilter !== "all" && state.guideFilter !== "none" && !known.has(state.guideFilter)) state.guideFilter = "all";
+  renderGuideFilter(counts);
+
   list.replaceChildren();
-  if (!data.length) list.append(el("p", { class: "empty", text: "No guides yet." }));
-  for (const g of data) {
-    const actions = canEdit(g)
-      ? el("div", { class: "row" },
-          el("button", { class: "link", text: "Edit", onclick: () => editGuide(g) }),
-          el("button", { class: "link danger", text: "Delete", onclick: () => deleteRow("guides", g.id, loadGuides) }))
-      : null;
-    list.append(el("article", { class: "card guide" },
-      el("h2", { text: g.title }),
-      el("div", { class: "meta", text: "Updated " + fmtTime(g.updated_at) }),
-      el("div", { class: "body md", html: renderMarkdown(g.body) }),
-      actions,
-      el("section", { class: "discussion", "data-guide": g.id })));
-    renderDiscussion(g.id);
+  if (!data.length) { list.append(el("p", { class: "empty", text: "No guides yet." })); return; }
+  const groups = [...state.categories.map((c) => ({ key: c.id, name: c.name })), { key: "none", name: "No category" }];
+  const shown = [];
+  for (const grp of groups) {
+    if (state.guideFilter !== "all" && String(state.guideFilter) !== String(grp.key)) continue;
+    const items = data.filter((g) => String(keyOf(g)) === String(grp.key));
+    if (!items.length) continue;
+    // with no categories at all, skip the heading so the page stays as simple as before
+    const heading = state.categories.length ? el("h3", { class: "cat-heading", text: grp.name }) : null;
+    list.append(el("section", { class: "cat-group" }, heading, ...items.map(guideCard)));
+    shown.push(...items);
   }
+  if (!shown.length) list.append(el("p", { class: "empty", text: "No guides in this category yet." }));
+  for (const g of shown) renderDiscussion(g.id);
 }
 
 // ---------- guide comments ----------
@@ -310,7 +429,7 @@ function removeComment(id, guideId) {
 
 function editGuide(g) {
   const f = $("#form-guide");
-  f.id.value = g.id; f.title.value = g.title; f.body.value = g.body; updatePreview();
+  f.id.value = g.id; f.title.value = g.title; f.body.value = g.body; f.category_id.value = g.category_id == null ? "" : String(g.category_id); updatePreview();
   $("#guide-form-title").textContent = "Edit guide";
   $("#guide-cancel").hidden = false;
   f.scrollIntoView({ behavior: "smooth" });
@@ -345,7 +464,7 @@ $("#form-guide").onsubmit = (e) => {
   e.preventDefault();
   const f = e.target;
   withBusy(f, async () => {
-    const row = { title: f.title.value.trim(), body: f.body.value };
+    const row = { title: f.title.value.trim(), body: f.body.value, category_id: f.category_id.value ? Number(f.category_id.value) : null };
     const q = f.id.value
       ? sb.from("guides").update({ ...row, updated_at: new Date().toISOString() }).eq("id", f.id.value)
       : sb.from("guides").insert(row);
@@ -360,6 +479,227 @@ async function deleteRow(table, id, reload) {
   const { error } = await sb.from(table).delete().eq("id", id);
   if (error) return notify(error.message);
   reload();
+}
+
+// ---------- threads (Reddit-style) ----------
+
+function ago(iso) {
+  const s = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  const units = [["year", 31536000], ["month", 2592000], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [name, secs] of units) {
+    if (s >= secs) { const n = Math.floor(s / secs); return `${n} ${name}${n === 1 ? "" : "s"} ago`; }
+  }
+  return "just now";
+}
+
+function authorTag(p) {
+  const nodes = [el("b", { class: "who-name", text: p?.username ?? "former member" })];
+  const role = roleLabel(p);
+  if (role) nodes.push(el("span", { class: "badge", text: role }));
+  return el("span", { class: "author" }, ...nodes);
+}
+
+async function loadThreads() {
+  const [{ data: threads, error }, { data: votes, error: vErr }] = await Promise.all([
+    sb.from("threads").select("*"),
+    sb.from("votes").select("thread_id, comment_id"),
+  ]);
+  if (error) return notify(error.message);
+  if (vErr) notify("Votes could not load: " + vErr.message);
+  state.myVotes = {
+    threads: new Set((votes ?? []).filter((v) => v.thread_id != null).map((v) => v.thread_id)),
+    comments: new Set((votes ?? []).filter((v) => v.comment_id != null).map((v) => v.comment_id)),
+  };
+  state.threads = threads;
+  renderThreads();
+}
+
+function renderThreads() {
+  const list = $("#threads-list");
+  document.querySelectorAll("[data-sort]").forEach((b) => b.classList.toggle("active", b.dataset.sort === state.threadSort));
+  list.replaceChildren();
+  const rows = [...(state.threads ?? [])].sort((a, b) =>
+    (b.pinned - a.pinned) ||
+    (state.threadSort === "top" ? (b.score - a.score) || (new Date(b.created_at) - new Date(a.created_at))
+                                : new Date(b.created_at) - new Date(a.created_at)));
+  if (!rows.length) list.append(el("p", { class: "empty", text: "No threads yet. Start the first one." }));
+  for (const t of rows) list.append(threadCard(t));
+}
+
+function voteButton(voted, score, onToggle, label) {
+  const count = el("b", { class: "score", text: String(score) });
+  const btn = el("button", {
+    type: "button", class: "vote-btn" + (voted ? " voted" : ""), "aria-pressed": String(!!voted), "aria-label": label, text: "▲",
+  });
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try { await onToggle(btn, count); } finally { btn.disabled = false; }
+  };
+  return el("div", { class: "vote" }, btn, count);
+}
+
+async function toggleVote(kind, id, btn, count) {
+  const set = kind === "thread" ? state.myVotes.threads : state.myVotes.comments;
+  const col = kind === "thread" ? "thread_id" : "comment_id";
+  const had = set.has(id);
+  const q = had ? sb.from("votes").delete().eq(col, id).eq("user_id", state.me.id) : sb.from("votes").insert({ [col]: id });
+  const { error } = await q;
+  if (error) return notify(error.message);
+  had ? set.delete(id) : set.add(id);
+  const next = Number(count.textContent) + (had ? -1 : 1);
+  count.textContent = String(next);
+  btn.classList.toggle("voted", !had);
+  btn.setAttribute("aria-pressed", String(!had));
+  const row = kind === "thread" ? state.threads.find((t) => t.id === id) : null;
+  if (row) row.score = next;
+}
+
+function threadCard(t) {
+  const author = state.profiles.get(t.author_id);
+  const card = el("article", { class: "card thread-card" + (t.pinned ? " pinned" : ""), "data-id": t.id });
+  const main = el("details", { class: "thread-main" });
+  main.open = state.openThreads.has(t.id);
+  const countText = el("span", { text: `${t.comment_count} comment${t.comment_count === 1 ? "" : "s"}` });
+  main.append(el("summary", {},
+    el("span", { class: "t-title" }, t.pinned ? el("span", { class: "badge pin", text: "Pinned" }) : null, document.createTextNode(t.title)),
+    el("span", { class: "t-meta" }, authorTag(author), el("span", { text: ago(t.created_at) }), countText)));
+  const body = el("div", { class: "t-body" });
+  if (t.body.trim()) body.append(el("div", { class: "md", html: renderMarkdown(t.body) }));
+  const tools = el("div", { class: "row t-tools" });
+  if (state.me.is_owner) {
+    tools.append(el("button", { class: "link", text: t.pinned ? "Unpin" : "Pin to top", onclick: () => pinThread(t) }));
+  }
+  if (state.me.is_owner || t.author_id === state.me.id) {
+    tools.append(el("button", { class: "link danger", text: "Delete thread", onclick: () => deleteThread(t) }));
+  }
+  const comments = el("div", { class: "t-comments" });
+  body.append(tools, comments);
+  main.append(body);
+  let loaded = false;
+  const open = () => { if (!loaded) { loaded = true; loadThreadComments(t, comments, countText); } };
+  main.addEventListener("toggle", () => {
+    if (main.open) { state.openThreads.add(t.id); open(); } else state.openThreads.delete(t.id);
+  });
+  if (main.open) open();
+  card.append(
+    voteButton(state.myVotes.threads.has(t.id), t.score, (btn, count) => toggleVote("thread", t.id, btn, count), "Upvote thread: " + t.title),
+    main);
+  return card;
+}
+
+async function pinThread(t) {
+  const { error } = await sb.from("threads").update({ pinned: !t.pinned }).eq("id", t.id);
+  if (error) return notify(error.message);
+  t.pinned = !t.pinned;
+  renderThreads();
+}
+
+async function deleteThread(t) {
+  if (!confirm(`Delete the thread "${t.title}" and all its comments? This cannot be undone.`)) return;
+  const { error } = await sb.from("threads").delete().eq("id", t.id);
+  if (error) return notify(error.message);
+  state.threads = state.threads.filter((x) => x.id !== t.id);
+  state.openThreads.delete(t.id);
+  renderThreads();
+}
+
+$("#form-thread").onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target;
+  withBusy(f, async () => {
+    const { data, error } = await sb.from("threads").insert({ title: f.title.value.trim(), body: f.body.value }).select().single();
+    if (error) return notify(error.message);
+    f.reset();
+    $("#new-thread-box").open = false;
+    state.threads = [data, ...(state.threads ?? [])];
+    state.openThreads.add(data.id);
+    renderThreads();
+    notify("Thread posted.", true);
+  });
+};
+
+document.querySelectorAll("[data-sort]").forEach((b) => (b.onclick = () => { state.threadSort = b.dataset.sort; renderThreads(); }));
+
+async function loadThreadComments(t, box, countText) {
+  box.replaceChildren(el("p", { class: "empty", text: "Loading comments…" }));
+  const { data, error } = await sb.from("thread_comments").select("*").eq("thread_id", t.id).order("created_at");
+  if (error) { box.replaceChildren(); return notify(error.message); }
+  const ctx = { t, box, countText, rows: data };
+  renderThreadComments(ctx);
+}
+
+function renderThreadComments(ctx) {
+  const { t, box, rows } = ctx;
+  box.replaceChildren();
+  const byParent = new Map();
+  for (const c of rows) {
+    const k = c.parent_id ?? "root";
+    if (!byParent.has(k)) byParent.set(k, []);
+    byParent.get(k).push(c);
+  }
+  // best first, then oldest first, like Reddit's default
+  for (const arr of byParent.values()) arr.sort((a, b) => (b.score - a.score) || (new Date(a.created_at) - new Date(b.created_at)));
+  const build = (parentKey, depth) => {
+    const wrap = el("div", { class: "c-children" + (depth > 0 ? " nested" : "") });
+    for (const c of byParent.get(parentKey) ?? []) {
+      wrap.append(threadComment(ctx, c), build(c.id, Math.min(depth + 1, 6)));
+    }
+    return wrap;
+  };
+  if (!rows.length) box.append(el("p", { class: "empty", text: "No comments yet. Be the first to reply." }));
+  box.append(build("root", 0), threadCommentForm(ctx, null, "Add a comment…", "Comment"));
+  ctx.countText.textContent = `${rows.length} comment${rows.length === 1 ? "" : "s"}`;
+  t.comment_count = rows.length;
+}
+
+function threadComment(ctx, c) {
+  const author = state.profiles.get(c.author_id);
+  const node = el("div", { class: "t-comment", "data-id": c.id });
+  const head = el("div", { class: "head" }, authorTag(author), el("span", { text: ago(c.created_at) }));
+  const actions = el("div", { class: "row c-actions" },
+    el("button", { class: "link", text: "Reply", onclick: (e) => {
+      const existing = node.querySelector(":scope > form");
+      if (existing) { existing.remove(); e.target.textContent = "Reply"; return; }
+      const f = threadCommentForm(ctx, c.id, "Write a reply…", "Reply");
+      node.append(f);
+      e.target.textContent = "Cancel";
+      f.querySelector("textarea").focus();
+    } }));
+  if (state.me.is_owner || c.author_id === state.me.id) {
+    actions.append(el("button", { class: "link danger", text: "delete", onclick: () => deleteThreadComment(ctx, c) }));
+  }
+  node.append(
+    voteButton(state.myVotes.comments.has(c.id), c.score, async (btn, count) => { await toggleVote("comment", c.id, btn, count); c.score = Number(count.textContent); }, "Upvote comment by " + (author?.username ?? "former member")),
+    el("div", { class: "c-main" }, head, el("div", { class: "text", text: c.body }), actions));
+  return node;
+}
+
+function threadCommentForm(ctx, parentId, placeholder, label) {
+  const ta = el("textarea", { rows: "2", maxlength: "4000", required: "", placeholder, "aria-label": placeholder });
+  const f = el("form", { class: "composer comment-form" }, ta, el("button", { type: "submit", class: "primary", text: label }));
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const body = ta.value.trim();
+    if (!body) return;
+    withBusy(f, async () => {
+      const { data, error } = await sb.from("thread_comments").insert({ thread_id: ctx.t.id, parent_id: parentId, body }).select().single();
+      if (error) return notify(error.message);
+      ctx.rows.push(data);
+      renderThreadComments(ctx);
+    });
+  };
+  return f;
+}
+
+async function deleteThreadComment(ctx, c) {
+  if (!confirm("Delete this comment and its replies?")) return;
+  const { error } = await sb.from("thread_comments").delete().eq("id", c.id);
+  if (error) return notify(error.message);
+  const gone = new Set([c.id]);
+  let grew = true;
+  while (grew) { grew = false; for (const r of ctx.rows) if (!gone.has(r.id) && gone.has(r.parent_id)) { gone.add(r.id); grew = true; } }
+  ctx.rows = ctx.rows.filter((r) => !gone.has(r.id));
+  renderThreadComments(ctx);
 }
 
 // ---------- videos ----------

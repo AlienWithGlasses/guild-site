@@ -80,7 +80,7 @@ nav button.active::after {
 #who-name { color: var(--name-blue); }
 
 /* ---- layout and plates ---- */
-main { max-width: 1000px; margin: 0 auto; padding: 28px 16px 80px; }
+main { max-width: 1000px; margin: 0 auto; min-width: 0; padding: 28px 16px 80px; }
 .card {
   position: relative; margin-bottom: 18px; padding: 18px 20px;
   background: linear-gradient(180deg, var(--hull-2), var(--hull));
@@ -160,6 +160,80 @@ button.danger { color: var(--alert); }
 .comment .comment-form { margin-top: 8px; }
 .comment-form textarea { min-height: 3.2em; }
 
+/* ---- collapsed guides, categories ---- */
+details.guide > summary, .thread-main > summary, .new-thread > summary, #category-manager > summary {
+  cursor: pointer; list-style: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details.guide > summary {
+  display: grid; grid-template-columns: 14px 1fr; column-gap: 14px; align-items: center;
+}
+details.guide > summary::before, .new-thread > summary::before, #category-manager > summary::before {
+  content: ""; width: 8px; height: 8px; background: var(--edge); transform: rotate(45deg);
+  box-shadow: 0 0 8px var(--edge); transition: transform .15s; grid-row: 1 / span 2;
+}
+details.guide[open] > summary::before, .new-thread[open] > summary::before, #category-manager[open] > summary::before { transform: rotate(135deg); }
+details.guide > summary h2 { margin: 0; color: var(--text); font-size: 1.4rem; grid-column: 2; }
+details.guide > summary .meta { grid-column: 2; margin: 2px 0 0; color: var(--amber); font: 600 .8rem var(--display); letter-spacing: .1em; text-transform: uppercase; }
+details.guide > summary:hover h2 { color: var(--edge); }
+details.guide[open] > summary { padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--edge-dim); }
+.new-thread > summary, #category-manager > summary {
+  display: flex; align-items: center; gap: 14px; font: 700 1.05rem var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--edge);
+}
+.new-thread[open] > summary, #category-manager[open] > summary { margin-bottom: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.chip {
+  background: rgba(3, 10, 15, .55); border: 1px solid var(--edge-dim); padding: 6px 14px; cursor: pointer; color: var(--muted);
+  font: 700 .95rem var(--display); letter-spacing: .1em; text-transform: uppercase;
+}
+.chip:hover { color: var(--text); }
+.chip.active { color: var(--edge); border-color: var(--edge); background: rgba(95, 216, 255, .1); box-shadow: 0 0 14px rgba(95, 216, 255, .2); }
+.cat-group { margin-bottom: 10px; }
+.cat-heading {
+  display: flex; align-items: center; gap: 10px; margin: 22px 0 12px;
+  font: 700 1.1rem var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--amber);
+}
+.cat-heading::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--amber), transparent); opacity: .5; }
+.cat-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cat-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 10px; background: rgba(3, 10, 15, .45); }
+.cat-list b { font: 700 1.05rem var(--display); letter-spacing: .06em; color: var(--text); }
+.cat-list button:disabled { opacity: .3; cursor: default; }
+#form-category input { flex: 1; min-width: 12ch; margin: 0; }
+
+/* ---- threads ---- */
+.sort-bar { margin-bottom: 16px; gap: 8px; }
+.sort-label { font: 700 .85rem var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.thread-card { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; padding: 14px 18px 14px 10px; }
+.thread-card.pinned { box-shadow: inset 0 1px 0 var(--amber), inset 0 0 0 1px rgba(242, 180, 65, .35), inset 0 0 40px rgba(242, 180, 65, .05); }
+.vote { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.vote-btn {
+  width: 34px; height: 30px; cursor: pointer; background: rgba(3, 10, 15, .55); color: var(--muted);
+  border: 1px solid var(--edge-dim); font-size: .8rem; line-height: 1;
+}
+.vote-btn:hover { color: var(--edge); border-color: var(--edge); }
+.vote-btn.voted { color: #1a1203; background: var(--amber); border-color: var(--amber); box-shadow: 0 0 10px rgba(242, 180, 65, .5); }
+.vote-btn:disabled { opacity: .5; cursor: wait; }
+.score { font: 700 1rem var(--display); letter-spacing: .04em; }
+.thread-main > summary { display: flex; flex-direction: column; gap: 4px; }
+.t-title { font: 700 1.3rem/1.2 var(--display); letter-spacing: .04em; text-transform: uppercase; color: var(--text); overflow-wrap: anywhere; }
+.thread-main > summary:hover .t-title { color: var(--edge); }
+.t-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; color: var(--muted); font-size: .85rem; }
+.author { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; max-width: 100%; }
+.who-name { color: var(--name-blue); font: 700 .95rem var(--display); letter-spacing: .05em; }
+.badge.pin { margin-right: 8px; padding: 1px 6px; background: var(--amber); color: #1a1203; vertical-align: middle; }
+.t-body { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge-dim); }
+.t-tools { margin: 10px 0; }
+.t-comments { margin-top: 10px; }
+.t-comment { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 8px 0; }
+.t-comment .vote-btn { width: 28px; height: 24px; }
+.t-comment .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .8rem; color: var(--muted); }
+.t-comment .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.c-actions { gap: 4px; }
+.thread-main, .c-main, .c-children, .t-body { min-width: 0; }
+.t-comment .text, .t-title, .t-meta { overflow-wrap: anywhere; }
+.c-children.nested { margin-left: 18px; padding-left: 10px; border-left: 1px dashed var(--edge-dim); }
+.t-comment .comment-form { grid-column: 2; margin-top: 6px; }
+
 /* ---- rendered Markdown (guides and the editor preview) ---- */
 .md { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
@@ -232,6 +306,9 @@ button.danger { color: var(--alert); }
 /* ---- phones: the nav becomes the game's bottom bar ---- */
 @media (max-width: 640px) {
   :root { --cut: 9px; }
+  .thread-card { grid-template-columns: 40px minmax(0, 1fr); padding-right: 12px; }
+  .t-comment { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
+  .c-children.nested { margin-left: 8px; padding-left: 6px; }
   body { font-size: 16px; }
   h1 { font-size: 1.6rem; }
   /* backdrop-filter would trap the fixed bottom nav inside the top bar */
@@ -242,7 +319,9 @@ button.danger { color: var(--alert); }
     background: linear-gradient(0deg, rgba(4, 12, 18, .98), rgba(4, 12, 18, .85));
     border-top: 1px solid var(--edge-dim); box-shadow: 0 -1px 24px rgba(95, 216, 255, .12);
   }
-  nav button { flex: 1; padding: 10px 2px; font-size: .78rem; letter-spacing: .04em; }
+  nav { overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  nav button { flex: 1 0 auto; padding: 10px 10px; font-size: .78rem; letter-spacing: .04em; white-space: nowrap; }
   nav button.active::after { bottom: auto; top: -7px; }
   main { padding-bottom: 96px; }
   .private-layout.with-list { grid-template-columns: 1fr; }
