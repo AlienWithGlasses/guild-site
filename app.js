@@ -12,6 +12,7 @@ const state = {
   profiles: new Map(),
   privatePeer: null, // profile id of the other person in private chat
   channel: null,
+  comments: [],      // guide_comments rows for the guides on screen
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -174,6 +175,9 @@ async function loadGuides() {
   const list = $("#guides-list");
   const { data, error } = await sb.from("guides").select("*").order("created_at", { ascending: false });
   if (error) return notify(error.message);
+  const { data: comments, error: cErr } = await sb.from("guide_comments").select("*").order("created_at");
+  if (cErr) notify("Comments could not load: " + cErr.message);
+  state.comments = comments ?? [];
   list.replaceChildren();
   if (!data.length) list.append(el("p", { class: "empty", text: "No guides yet." }));
   for (const g of data) {
@@ -186,8 +190,102 @@ async function loadGuides() {
       el("h2", { text: g.title }),
       el("div", { class: "meta", text: "Updated " + fmtTime(g.updated_at) }),
       el("div", { class: "body", text: g.body }),
-      actions));
+      actions,
+      el("section", { class: "discussion", "data-guide": g.id })));
+    renderDiscussion(g.id);
   }
+}
+
+// ---------- guide comments ----------
+
+function renderDiscussion(guideId) {
+  const box = document.querySelector(`.discussion[data-guide="${guideId}"]`);
+  if (!box) return;
+  const all = (state.comments ?? []).filter((c) => c.guide_id === guideId);
+  const tops = all.filter((c) => c.parent_id == null);
+  const open = box.querySelector("details")?.open ?? false;
+  const details = el("details", { class: "thread" });
+  details.open = open || location.hash === "#guide-" + guideId;
+  details.append(el("summary", { text: all.length ? `Discussion (${all.length})` : "Discussion" }));
+  const list = el("div", { class: "comments" });
+  if (!tops.length) list.append(el("p", { class: "empty", text: "No comments yet. Start the conversation." }));
+  for (const c of tops) {
+    const replies = all.filter((r) => r.parent_id === c.id);
+    list.append(el("div", { class: "thread-item" },
+      renderComment(c, guideId, true),
+      ...replies.map((r) => el("div", { class: "reply" }, renderComment(r, guideId, false)))));
+  }
+  details.append(list, commentForm(guideId, null, "Write a comment…", "Post comment"));
+  box.replaceChildren(details);
+}
+
+function renderComment(c, guideId, canReply) {
+  const author = state.profiles.get(c.author_id);
+  const mine = c.author_id === state.me.id;
+  const node = el("div", { class: "comment" + (author?.is_owner ? " owner" : ""), "data-id": c.id },
+    el("div", { class: "head" },
+      el("b", { text: author?.username ?? "former member" }),
+      author?.is_owner ? el("span", { class: "badge", text: "Owner" }) : null,
+      el("span", { text: fmtTime(c.created_at) }),
+      canReply ? el("button", { class: "link", text: "Reply", onclick: (e) => toggleReply(node, guideId, c.id, e.target) }) : null,
+      (mine || state.me.is_owner) ? el("button", { class: "link danger del", text: "delete", onclick: () => deleteComment(c.id, guideId) }) : null),
+    el("div", { class: "text", text: c.body }));
+  return node;
+}
+
+function toggleReply(node, guideId, parentId, btn) {
+  const existing = node.querySelector("form");
+  if (existing) { existing.remove(); btn.textContent = "Reply"; return; }
+  const f = commentForm(guideId, parentId, "Write a reply…", "Post reply");
+  node.append(f);
+  btn.textContent = "Cancel";
+  f.querySelector("textarea").focus();
+}
+
+function commentForm(guideId, parentId, placeholder, label) {
+  const ta = el("textarea", { rows: "2", maxlength: "2000", required: "", placeholder, "aria-label": placeholder });
+  const f = el("form", { class: "composer comment-form" }, ta, el("button", { type: "submit", class: "primary", text: label }));
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const body = ta.value.trim();
+    if (!body) return;
+    withBusy(f, async () => {
+      const { data, error } = await sb.from("guide_comments")
+        .insert({ guide_id: guideId, parent_id: parentId, author_id: state.me.id, body }).select().single();
+      if (error) return notify(error.message);
+      addComment(data);
+    });
+  };
+  return f;
+}
+
+function addComment(c) {
+  if ((state.comments ??= []).some((x) => x.id === c.id)) return;
+  state.comments.push(c);
+  renderDiscussion(c.guide_id);
+  const d = document.querySelector(`.discussion[data-guide="${c.guide_id}"] details`);
+  if (d) d.open = true;
+}
+
+async function deleteComment(id, guideId) {
+  const { error } = await sb.from("guide_comments").delete().eq("id", id);
+  if (error) return notify(error.message);
+  removeComment(id, guideId);
+}
+
+// Live updates from other members: re-render without forcing the thread open.
+function addCommentQuietly(c) {
+  if ((state.comments ??= []).some((x) => x.id === c.id)) return;
+  state.comments.push(c);
+  renderDiscussion(c.guide_id);
+}
+
+function removeComment(id, guideId) {
+  const gone = new Set([id]);
+  for (const c of state.comments ?? []) if (c.parent_id === id) gone.add(c.id); // replies go with their parent
+  state.comments = (state.comments ?? []).filter((c) => !gone.has(c.id));
+  if (guideId) renderDiscussion(guideId);
+  else document.querySelectorAll(".discussion").forEach((n) => renderDiscussion(Number(n.dataset.guide)));
 }
 
 function editGuide(g) {
@@ -380,6 +478,11 @@ function subscribeMessages() {
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, ({ old }) => {
       document.querySelectorAll(`.msg[data-id="${old.id}"]`).forEach((n) => n.remove());
     })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "guide_comments" }, async ({ new: c }) => {
+      if (!state.profiles.has(c.author_id)) await loadProfiles();
+      addCommentQuietly(c);
+    })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "guide_comments" }, ({ old }) => removeComment(old.id))
     .subscribe();
 }
 
