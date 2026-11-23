@@ -157,7 +157,7 @@ async function onSession(session) {
     : "Only you and the guild owner can read these.";
 
   subscribeMessages();
-  showView(location.hash.slice(1) || "guides");
+  route();
 }
 
 async function loadProfiles() {
@@ -170,13 +170,58 @@ async function loadProfiles() {
 // ---------- navigation ----------
 
 const VIEWS = ["auth", "guides", "threads", "videos", "public", "private", "members", "owner"];
-function showView(name) {
+// Share links look like  #guides/12  and  #threads/5. `target` is the item a link points at.
+function parseHash() {
+  const [view, id] = decodeURIComponent(location.hash.slice(1)).split("/");
+  const n = Number(id);
+  return { view: view || "guides", id: id && Number.isInteger(n) && n > 0 ? n : null };
+}
+function shareUrl(view, id) {
+  return location.origin + location.pathname + "#" + view + "/" + id;
+}
+async function copyLink(view, id, btn) {
+  const url = shareUrl(view, id);
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch (e) {}
+  if (!ok) { window.prompt("Copy this link:", url); return; }
+  const old = btn.textContent;
+  btn.textContent = "Link copied";
+  setTimeout(() => (btn.textContent = old), 1800);
+}
+function linkButton(view, id) {
+  const b = el("button", { type: "button", class: "link", text: "Copy link", "aria-label": "Copy a link to this " + (view === "guides" ? "guide" : "thread") });
+  b.onclick = () => copyLink(view, id, b);
+  return b;
+}
+// After a list renders, open the linked item, scroll to it and flash it once.
+function focusTarget(kind) {
+  const t = state.target;
+  if (!t || t.view !== kind || !t.id) return;
+  state.target = null;
+  const node = document.querySelector(`#${kind === "guides" ? "guide" : "thread"}-${t.id}`);
+  if (!node) return notify(`That ${kind === "guides" ? "guide" : "thread"} no longer exists.`);
+  const d = node.matches("details") ? node : node.querySelector("details");
+  if (d) d.open = true;
+  node.scrollIntoView({ block: "start" });
+  node.classList.add("flash");
+  setTimeout(() => node.classList.remove("flash"), 2500);
+}
+function route() {
+  const { view, id } = parseHash();
+  showView(view, id);
+}
+window.addEventListener("hashchange", () => { if (state.me) route(); });
+
+function showView(name, id = null) {
   if (!state.me && name !== "auth") name = "auth";
   if ((name === "owner" || name === "members") && !state.me?.is_owner) name = "guides";
   if (!VIEWS.includes(name)) name = "guides";
+  state.target = id && (name === "guides" || name === "threads") ? { view: name, id } : null;
+  if (state.target && name === "guides") state.guideFilter = "all";
   for (const v of VIEWS) $("#view-" + v).hidden = v !== name;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-  if (name !== "auth") history.replaceState(null, "", "#" + name);
+  const hash = "#" + name + (state.target ? "/" + id : "");
+  if (name !== "auth" && location.hash !== hash) history.replaceState(null, "", hash);
   ({ guides: loadGuides, threads: loadThreads, videos: loadVideos, public: loadPublic, private: openPrivate, members: loadMembers, owner: loadCodes }[name] || (() => {}))();
 }
 document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
@@ -270,13 +315,13 @@ async function moveCategory(i, dir) {
 
 function guideCard(g) {
   const card = el("details", { class: "card guide", "data-id": g.id, id: "guide-" + g.id });
-  card.open = state.openGuides.has(g.id) || location.hash === "#guide-" + g.id;
+  card.open = state.openGuides.has(g.id) || state.target?.view === "guides" && state.target.id === g.id;
   card.addEventListener("toggle", () => (card.open ? state.openGuides.add(g.id) : state.openGuides.delete(g.id)));
-  const actions = canEdit(g)
-    ? el("div", { class: "row" },
-        el("button", { class: "link", text: "Edit", onclick: () => editGuide(g) }),
-        el("button", { class: "link danger", text: "Delete", onclick: () => deleteRow("guides", g.id, loadGuides) }))
-    : null;
+  const actions = el("div", { class: "row" },
+    linkButton("guides", g.id),
+    ...(canEdit(g) ? [
+      el("button", { class: "link", text: "Edit", onclick: () => editGuide(g) }),
+      el("button", { class: "link danger", text: "Delete", onclick: () => deleteRow("guides", g.id, loadGuides) })] : []));
   card.append(
     el("summary", {},
       el("h2", { text: g.title }),
@@ -333,6 +378,7 @@ async function loadGuides() {
   }
   if (!shown.length) list.append(el("p", { class: "empty", text: "No guides in this category yet." }));
   for (const g of shown) renderDiscussion(g.id);
+  focusTarget("guides");
 }
 
 // ---------- guide comments ----------
@@ -344,7 +390,7 @@ function renderDiscussion(guideId) {
   const tops = all.filter((c) => c.parent_id == null);
   const open = box.querySelector("details")?.open ?? false;
   const details = el("details", { class: "thread" });
-  details.open = open || location.hash === "#guide-" + guideId;
+  details.open = open;
   details.append(el("summary", { text: all.length ? `Discussion (${all.length})` : "Discussion" }));
   const list = el("div", { class: "comments" });
   if (!tops.length) list.append(el("p", { class: "empty", text: "No comments yet. Start the conversation." }));
@@ -511,7 +557,9 @@ async function loadThreads() {
     comments: new Set((votes ?? []).filter((v) => v.comment_id != null).map((v) => v.comment_id)),
   };
   state.threads = threads;
+  if (state.target?.view === "threads") state.openThreads.add(state.target.id);
   renderThreads();
+  focusTarget("threads");
 }
 
 function renderThreads() {
@@ -556,7 +604,7 @@ async function toggleVote(kind, id, btn, count) {
 
 function threadCard(t) {
   const author = state.profiles.get(t.author_id);
-  const card = el("article", { class: "card thread-card" + (t.pinned ? " pinned" : ""), "data-id": t.id });
+  const card = el("article", { class: "card thread-card" + (t.pinned ? " pinned" : ""), "data-id": t.id, id: "thread-" + t.id });
   const main = el("details", { class: "thread-main" });
   main.open = state.openThreads.has(t.id);
   const countText = el("span", { text: `${t.comment_count} comment${t.comment_count === 1 ? "" : "s"}` });
@@ -565,7 +613,7 @@ function threadCard(t) {
     el("span", { class: "t-meta" }, authorTag(author), el("span", { text: ago(t.created_at) }), countText)));
   const body = el("div", { class: "t-body" });
   if (t.body.trim()) body.append(el("div", { class: "md", html: renderMarkdown(t.body) }));
-  const tools = el("div", { class: "row t-tools" });
+  const tools = el("div", { class: "row t-tools" }, linkButton("threads", t.id));
   if (state.me.is_owner) {
     tools.append(el("button", { class: "link", text: t.pinned ? "Unpin" : "Pin to top", onclick: () => pinThread(t) }));
   }

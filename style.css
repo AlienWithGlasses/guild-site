@@ -349,3 +349,8 @@ label.inline { margin: 0; }
   font: 600 1rem var(--display); letter-spacing: .06em; text-transform: uppercase;
 }
 .update-banner button { background: var(--amber); color: #1a1203; border: 0; padding: 6px 12px; font: 700 .95rem var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+
+/* a shared link lands on this item: flash its edge once */
+@keyframes flash-edge { 0%,60% { box-shadow: 0 0 0 2px var(--amber, #f2b544), 0 0 24px rgba(242,181,68,.35); } 100% { box-shadow: none; } }
+.card.flash { animation: flash-edge 2.4s ease-out 1; }
+@media (prefers-reduced-motion: reduce) { .card.flash { animation: none; outline: 2px solid var(--amber, #f2b544); } }
